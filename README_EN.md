@@ -6,6 +6,10 @@ Port Master is a cross-platform local port and process management tool. This ver
 
 This project references the feature design and interaction ideas from the earlier Java version, [MMCISAGOODMAN/port-master](https://github.com/MMCISAGOODMAN/port-master), and reimplements them with Go + Vue.
 
+## Screenshot
+
+![Port Master dashboard](docs/images/port-master-screenshot.png)
+
 ## Features
 
 - Scan local TCP/UDP ports with protocol, port, local address, remote address, PID, process name, executable path, and connection state.
@@ -24,25 +28,6 @@ This project references the feature design and interaction ideas from the earlie
 | Storage | No database; user settings live in browser LocalStorage |
 | Distribution | Single Go executable with embedded Vue build |
 | Platforms | Windows, Linux, macOS |
-
-## Project Structure
-
-```text
-port-master/
-├── backend/
-│   ├── go.mod
-│   ├── cmd/port-master/main.go
-│   └── internal/
-│       ├── api/
-│       ├── ports/
-│       ├── processes/
-│       ├── system/
-│       └── web/dist/
-└── frontend/
-    ├── package.json
-    ├── vite.config.js
-    └── src/
-```
 
 ## Quick Start
 
@@ -102,42 +87,6 @@ All `/api/*` routes except `/api/auth/*` require this header when auth is enable
 ```http
 Authorization: Bearer your-token
 ```
-
-## API
-
-Success response:
-
-```json
-{ "code": 200, "message": "success", "data": {} }
-```
-
-Main endpoints:
-
-- `GET /api/auth/status`
-- `POST /api/auth/login`
-- `GET /api/ports/scan`
-- `GET /api/ports/query/{port}`
-- `GET /api/ports/query?ports=8080,9000-9010`
-- `GET /api/ports/query/range?start=8000&end=8100`
-- `GET /api/ports/query/process?name=nginx`
-- `GET /api/ports/query/pid/{pid}`
-- `GET /api/ports/free?start=8080&count=5`
-- `GET /api/ports/conflicts`
-- `GET /api/ports/summary`
-- `GET /api/ports/probe?host=127.0.0.1&port=8080&timeout=3000`
-- `POST /api/ports/probe/batch`
-- `POST /api/ports/monitor`
-- `GET /api/process/list`
-- `GET /api/process/{pid}`
-- `DELETE /api/process/{pid}`
-- `DELETE /api/process/{pid}/force`
-- `DELETE /api/process/by-port/{port}`
-- `DELETE /api/process/by-port/{port}/force`
-- `POST /api/process/kill/batch`
-- `GET /api/system/stats`
-- `GET /api/system/info`
-
-Reserved remote-management endpoints currently return not implemented: `POST /api/remote/scan`, `POST /api/remote/kill`, and `POST /api/remote/test`.
 
 ## Permissions
 
