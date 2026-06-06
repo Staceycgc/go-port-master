@@ -4,6 +4,8 @@
 
 Port Master 是一个跨平台的本机端口与进程管理工具。当前版本使用 Go 后端 + Vue 3 前端，发布时可构建成单个 Go 可执行文件，前端静态资源会嵌入二进制中。
 
+本项目参考了此前 Java 版本项目 [MMCISAGOODMAN/port-master](https://github.com/MMCISAGOODMAN/port-master) 的功能设计与交互思路，并在此基础上使用 Go + Vue 重新实现。
+
 ## 功能
 
 - 扫描本机 TCP/UDP 端口，查看协议、端口、本地地址、远端地址、PID、进程名、程序路径和连接状态。

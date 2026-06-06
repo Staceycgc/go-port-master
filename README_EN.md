@@ -4,6 +4,8 @@
 
 Port Master is a cross-platform local port and process management tool. This version uses a Go backend and a Vue 3 frontend. Production builds can be shipped as one Go executable with the Vue assets embedded.
 
+This project references the feature design and interaction ideas from the earlier Java version, [MMCISAGOODMAN/port-master](https://github.com/MMCISAGOODMAN/port-master), and reimplements them with Go + Vue.
+
 ## Features
 
 - Scan local TCP/UDP ports with protocol, port, local address, remote address, PID, process name, executable path, and connection state.
