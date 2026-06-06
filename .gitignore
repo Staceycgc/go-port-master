@@ -1,0 +1,25 @@
+# Maven
+backend/target/
+backend/.mvn/
+
+# Go build output
+backend/port-master
+backend/port-master.exe
+backend/dist/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
