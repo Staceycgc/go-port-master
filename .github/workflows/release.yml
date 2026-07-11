@@ -32,6 +32,12 @@ jobs:
         working-directory: frontend
         run: npm ci && npm run build
 
+      - name: Verify embedded frontend assets
+        run: ls -la backend/internal/web/dist
+
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
       - name: Build release binaries
         run: bash scripts/build-release.sh
 
