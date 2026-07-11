@@ -4,13 +4,15 @@ set -eo pipefail
 ROOT="${GITHUB_WORKSPACE:-$(cd "$(dirname "$0")/.." && pwd)}"
 VERSION="${GITHUB_REF_NAME#v}"
 DIST="$ROOT/dist/release"
+BIN_DIR="$DIST/.bin"
+STAGE_DIR="$DIST/.stage"
 
 if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
   echo "Unable to resolve release version from GITHUB_REF_NAME=${GITHUB_REF_NAME:-<empty>}"
   exit 1
 fi
 
-mkdir -p "$DIST"
+mkdir -p "$DIST" "$BIN_DIR" "$STAGE_DIR"
 cd "$ROOT/backend"
 go mod download
 
@@ -19,8 +21,8 @@ build_one() {
   local goarch="$2"
   local ext="$3"
   local base="port-master-${VERSION}-${goos}-${goarch}"
-  local out="$DIST/${base}${ext}"
-  local stage="$DIST/${base}"
+  local out="$BIN_DIR/${base}${ext}"
+  local stage="$STAGE_DIR/${base}"
   local archive=""
 
   echo "==> Building ${base}"
@@ -67,6 +69,8 @@ build_one linux amd64 ""
 build_one linux arm64 ""
 build_one darwin amd64 ""
 build_one darwin arm64 ""
+
+rm -rf "$BIN_DIR" "$STAGE_DIR"
 
 echo "==> Release artifacts"
 ls -lh "$DIST"
