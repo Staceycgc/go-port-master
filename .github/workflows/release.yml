@@ -36,6 +36,8 @@ jobs:
         working-directory: backend
         run: |
           set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y zip
           version="${GITHUB_REF_NAME#v}"
           mkdir -p ../dist/release
 
