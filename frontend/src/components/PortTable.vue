@@ -1,22 +1,22 @@
-<template>
+﻿<template>
   <div class="port-table-wrapper card-shadow">
     <div class="table-toolbar">
       <el-button type="danger" size="small" :disabled="selectedRows.length === 0" @click="handleBatchKill(false)">
-        批量结束
+        {{ t('table.batchKill') }}
       </el-button>
       <el-button type="danger" size="small" plain :disabled="selectedRows.length === 0" @click="handleBatchKill(true)">
-        批量强杀
+        {{ t('table.batchForceKill') }}
       </el-button>
-      <span v-if="selectedRows.length" class="text-muted">已选 {{ selectedRows.length }} 项</span>
+      <span v-if="selectedRows.length" class="text-muted">{{ t('table.selected', { count: selectedRows.length }) }}</span>
     </div>
 
-    <div class="table-body">
+    <div class="table-body" :class="{ 'table-body--mobile': isMobileLayout }">
       <el-table
         :data="paginatedData"
         v-loading="loading"
         stripe
         border
-        height="100%"
+        :height="tableHeight"
         :row-class-name="rowClassName"
         @selection-change="handleSelectionChange"
         @row-click="(row) => $emit('row-click', row)"
@@ -24,51 +24,56 @@
         style="width: 100%"
       >
         <el-table-column type="selection" width="45" :selectable="row => !!row.pid" />
-        <el-table-column prop="protocol" label="协议" width="68" sortable="custom" />
-        <el-table-column prop="port" label="端口" width="100" sortable="custom">
+        <el-table-column prop="protocol" :label="t('table.protocol')" width="68" sortable="custom" />
+        <el-table-column prop="port" :label="t('table.port')" width="100" sortable="custom">
           <template #default="{ row }">
             <span>{{ row.port }}</span>
-            <el-tag v-if="getDiffType(row) === 'new'" size="small" type="success" class="diff-tag">新</el-tag>
-            <el-tag v-else-if="getDiffType(row) === 'changed'" size="small" type="warning" class="diff-tag">变</el-tag>
+            <el-tag v-if="getDiffType(row) === 'new'" size="small" type="success" class="diff-tag">{{ t('table.tagNew') }}</el-tag>
+            <el-tag v-else-if="getDiffType(row) === 'changed'" size="small" type="warning" class="diff-tag">{{ t('table.tagChanged') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="服务" width="110" show-overflow-tooltip>
+        <el-table-column :label="t('table.service')" width="110" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="service-name">{{ getServiceName(row.port) || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="localAddress" label="本地地址" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="foreignAddress" label="外部地址" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="pid" label="PID" width="80" sortable="custom" />
-        <el-table-column prop="processName" label="进程名" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="state" label="状态" width="150" sortable="custom">
+        <el-table-column prop="localAddress" :label="t('table.localAddress')" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="foreignAddress" :label="t('table.foreignAddress')" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="pid" :label="t('table.pid')" width="80" sortable="custom" />
+        <el-table-column prop="processName" :label="t('table.processName')" min-width="110" show-overflow-tooltip />
+        <el-table-column prop="state" :label="t('table.state')" width="110" sortable="custom">
           <template #default="{ row }">
-            <el-tag class="state-tag" :type="stateTagType(row.state)" size="small">{{ row.state }}</el-tag>
+            <el-tag :type="stateTagType(row.state)" size="small">{{ row.state }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="330" fixed="right">
+        <el-table-column
+          :label="t('common.action')"
+          :width="actionColumnWidth"
+          :fixed="actionColumnFixed"
+        >
           <template #default="{ row }">
-            <div class="row-actions">
-              <el-button link type="primary" size="small" @click.stop="copyRow(row)">复制</el-button>
-              <el-button v-if="canOpen(row)" link type="primary" size="small" @click.stop="openUrl(row)">打开</el-button>
-              <el-button link type="primary" size="small" @click.stop="$emit('probe', row.port)" :disabled="row.state === 'FREE'">探测</el-button>
-              <el-button link type="primary" size="small" @click.stop="$emit('row-click', row)" :disabled="!row.pid">详情</el-button>
-              <el-button link type="primary" size="small" @click.stop="$emit('add-to-group', row)" :disabled="row.state === 'FREE'">收藏</el-button>
-              <el-button v-if="row.pid" link type="warning" size="small" @click.stop="confirmKill(row.pid, false)">结束</el-button>
-              <el-button v-if="row.pid" link type="danger" size="small" @click.stop="confirmKill(row.pid, true)">强杀</el-button>
-            </div>
+            <el-button link type="primary" size="small" @click.stop="copyRow(row)">{{ t('common.copy') }}</el-button>
+            <el-button v-if="canOpen(row)" link type="primary" size="small" @click.stop="openUrl(row)">{{ t('table.open') }}</el-button>
+            <el-button link type="primary" size="small" @click.stop="$emit('probe', row.port)" :disabled="row.state === 'FREE'">{{ t('table.probe') }}</el-button>
+            <el-button link type="primary" size="small" @click.stop="$emit('row-click', row)" :disabled="!row.pid">{{ t('table.detail') }}</el-button>
+            <el-button link type="primary" size="small" @click.stop="$emit('add-to-group', row)" :disabled="row.state === 'FREE'">{{ t('table.favorite') }}</el-button>
+            <el-button v-if="row.state === 'LISTEN' && row.port" link type="warning" size="small" @click.stop="confirmKillByPort(row.port, false)">{{ t('table.freePort') }}</el-button>
+            <el-button v-if="row.pid" link type="warning" size="small" @click.stop="confirmKill(row.pid, false)">{{ t('table.kill') }}</el-button>
+            <el-button v-if="row.pid" link type="danger" size="small" @click.stop="confirmKill(row.pid, true)">{{ t('table.forceKill') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
     </div>
 
-    <div class="pagination-bar">
+    <div class="pagination-bar" :class="{ 'pagination-bar--mobile': isMobileLayout }">
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
         :page-sizes="[20, 50, 100, 200]"
         :total="sortedData.length"
-        layout="total, sizes, prev, pager, next, jumper"
+        :layout="paginationLayout"
+        :pager-count="paginationPagerCount"
+        :small="isMobileLayout"
         background
       />
     </div>
@@ -76,10 +81,42 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getServiceName, isWebPort, getOpenUrl } from '@/utils/portServices'
 import { rowKey } from '@/utils/scanDiff'
+
+const { t } = useI18n()
+
+const MOBILE_BREAKPOINT = 767
+const MOBILE_TABLE_HEIGHT = 360
+
+const isMobileLayout = ref(
+  typeof window !== 'undefined' && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches
+)
+let mobileMediaQuery = null
+
+function syncMobileLayout() {
+  isMobileLayout.value = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches
+}
+
+onMounted(() => {
+  mobileMediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`)
+  mobileMediaQuery.addEventListener('change', syncMobileLayout)
+})
+
+onUnmounted(() => {
+  mobileMediaQuery?.removeEventListener('change', syncMobileLayout)
+})
+
+const tableHeight = computed(() => (isMobileLayout.value ? MOBILE_TABLE_HEIGHT : '100%'))
+const actionColumnFixed = computed(() => (isMobileLayout.value ? false : 'right'))
+const actionColumnWidth = computed(() => (isMobileLayout.value ? 280 : 340))
+const paginationLayout = computed(() =>
+  isMobileLayout.value ? 'total, prev, pager, next' : 'total, sizes, prev, pager, next, jumper'
+)
+const paginationPagerCount = computed(() => (isMobileLayout.value ? 5 : 7))
 
 const props = defineProps({
   data: { type: Array, default: () => [] },
@@ -157,18 +194,26 @@ function copyRow(row) {
   const svc = getServiceName(row.port)
   const text = [row.protocol, row.port, svc, row.localAddress, row.foreignAddress,
     row.pid || '', row.processName, row.state].join('\t')
-  navigator.clipboard.writeText(text).then(() => ElMessage.success('已复制到剪贴板'))
+  navigator.clipboard.writeText(text).then(() => ElMessage.success(t('table.copied')))
 }
 
 function confirmKill(pid, force) {
-  ElMessageBox.confirm(`确定${force ? '强制杀死' : '正常结束'}进程 PID: ${pid}？`, '确认', { type: 'warning' })
+  const action = force ? t('table.forceEnd') : t('table.normalEnd')
+  ElMessageBox.confirm(t('table.confirmKill', { action, pid }), t('common.confirmTitle'), { type: 'warning' })
     .then(() => emit('kill', pid, force)).catch(() => {})
+}
+
+function confirmKillByPort(port, force) {
+  const action = force ? t('table.forceFreePort') : t('table.freePortAction')
+  ElMessageBox.confirm(t('table.confirmKillByPort', { action, port }), t('table.freePort'), { type: 'warning' })
+    .then(() => emit('kill-by-port', port, force)).catch(() => {})
 }
 
 function handleBatchKill(force) {
   const pids = selectedRows.value.map(r => r.pid).filter(Boolean)
   if (!pids.length) return
-  ElMessageBox.confirm(`确定${force ? '强制杀死' : '正常结束'} ${pids.length} 个进程？`, '批量操作', { type: 'warning' })
+  const action = force ? t('table.forceEnd') : t('table.normalEnd')
+  ElMessageBox.confirm(t('table.confirmBatchKill', { action, count: pids.length }), t('table.batchOperation'), { type: 'warning' })
     .then(() => emit('batch-kill', pids, force)).catch(() => {})
 }
 </script>
@@ -177,6 +222,7 @@ function handleBatchKill(force) {
 .port-table-wrapper {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--pm-bg-card);
@@ -196,7 +242,8 @@ function handleBatchKill(force) {
 .table-body {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  min-width: 0;
+  overflow: auto;
 }
 
 .pagination-bar {
@@ -207,25 +254,37 @@ function handleBatchKill(force) {
   padding-top: 4px;
 }
 
+@media (max-width: 767px) {
+  .port-table-wrapper {
+    flex: none;
+    min-height: 440px;
+    height: auto;
+  }
+
+  .table-body,
+  .table-body--mobile {
+    flex: none;
+    min-height: 360px;
+    height: 360px;
+    overflow: auto;
+  }
+
+  .pagination-bar--mobile {
+    justify-content: center;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pagination-bar--mobile :deep(.el-pagination) {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 6px;
+  }
+}
+
 .diff-tag { margin-left: 4px; transform: scale(0.85); }
 .service-name { color: var(--pm-text-muted); font-size: 12px; }
-.state-tag {
-  max-width: none;
-  white-space: nowrap;
-}
-.row-actions {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 10px;
-  white-space: nowrap;
-}
-.row-actions :deep(.el-button) {
-  margin-left: 0;
-  padding-left: 0;
-  padding-right: 0;
-  flex: 0 0 auto;
-}
 :deep(.conflict-row) { background-color: var(--pm-conflict-bg) !important; }
 :deep(.diff-new-row) { background-color: rgba(103, 194, 58, 0.12) !important; }
 :deep(.diff-changed-row) { background-color: rgba(230, 162, 60, 0.12) !important; }

@@ -1,11 +1,16 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { clearAuthToken, getAuthToken } from '@/utils/auth'
+import i18n from '@/i18n'
 
 const request = axios.create({
   baseURL: '/api',
   timeout: 120000
 })
+
+function t(key) {
+  return i18n.global.t(key)
+}
 
 request.interceptors.request.use((config) => {
   const token = getAuthToken()
@@ -19,7 +24,7 @@ request.interceptors.response.use(
   (response) => {
     const res = response.data
     if (res.code && res.code !== 200) {
-      ElMessage.error(res.message || 'Request failed')
+      ElMessage.error(res.message || t('auth.requestFailed'))
       return Promise.reject(new Error(res.message))
     }
     return res
@@ -28,10 +33,10 @@ request.interceptors.response.use(
     if (error.response?.status === 401) {
       clearAuthToken()
       window.dispatchEvent(new CustomEvent('port-master:auth-required'))
-      ElMessage.error('Authentication required')
+      ElMessage.error(t('auth.authRequired'))
       return Promise.reject(error)
     }
-    ElMessage.error(error.response?.data?.message || error.message || 'Network error')
+    ElMessage.error(error.response?.data?.message || error.message || t('auth.networkError'))
     return Promise.reject(error)
   }
 )

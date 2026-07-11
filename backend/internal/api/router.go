@@ -8,21 +8,59 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"port-master/backend/internal/config"
+	"port-master/backend/internal/docker"
+	"port-master/backend/internal/k8s"
+	"port-master/backend/internal/monitor"
+	"port-master/backend/internal/network"
 	"port-master/backend/internal/ports"
 	"port-master/backend/internal/processes"
+	"port-master/backend/internal/remote"
 	"port-master/backend/internal/system"
 	"port-master/backend/internal/web"
 )
 
 type ServerConfig struct {
 	Auth AuthConfig
+	App  config.Config
 }
 
-func NewRouter(config ServerConfig) http.Handler {
-	portService := ports.NewService()
+type Server struct {
+	router    http.Handler
+	scheduler *monitor.Scheduler
+	hub       *monitor.Hub
+}
+
+func NewServer(serverConfig ServerConfig) (*Server, error) {
+	appConfig, err := serverConfig.App.Validate()
+	if err != nil {
+		return nil, err
+	}
+
+	portService := ports.NewServiceWithOptions(
+		ports.GopsutilScanner{},
+		appConfig.ScanCacheTTL(),
+	)
 	processService := processes.NewService(portService)
 	systemService := system.NewService(portService)
-	authHandler := NewAuthHandler(config.Auth)
+	authHandler := NewAuthHandler(serverConfig.Auth)
+
+	remoteService := remote.NewService(appConfig)
+	dockerService := docker.NewService()
+	k8sClient := k8s.NewClient()
+	networkService := network.NewService()
+
+	monitorRegistry := monitor.NewRegistry()
+	monitorHub := monitor.NewHub()
+	monitorScheduler := monitor.NewScheduler(
+		monitorRegistry,
+		monitorHub,
+		portService,
+		appConfig.MonitorPollInterval(),
+		monitor.DefaultPollTimeout,
+	)
+	monitorScheduler.Start()
+	monitorWS := monitor.NewWSHandler(monitorHub)
 
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
@@ -38,29 +76,59 @@ func NewRouter(config ServerConfig) http.Handler {
 			r.Use(authHandler.Middleware)
 			registerPortRoutes(r, portService)
 			registerProcessRoutes(r, processService)
-			registerSystemRoutes(r, systemService, config.Auth.Enabled)
-			registerRemoteRoutes(r)
+			registerSystemRoutes(r, systemService, serverConfig.Auth.Enabled, appConfig)
+			registerRemoteRoutes(r, remoteService)
+			registerDockerRoutes(r, dockerService)
+			registerK8sRoutes(r, k8sClient)
+			registerNetworkRoutes(r, networkService)
+			registerMonitorRoutes(r, monitorRegistry, monitorHub)
 		})
+	})
+
+	router.Group(func(r chi.Router) {
+		r.Use(authHandler.WebSocketMiddleware)
+		r.Get("/ws/monitor", monitorWS.ServeHTTP)
 	})
 
 	spa := spaHandler()
 	router.Get("/", spa.ServeHTTP)
 	router.Get("/*", func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			WriteError(w, http.StatusNotFound, "api endpoint not found")
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
+			WriteError(w, http.StatusNotFound, "endpoint not found")
 			return
 		}
 		spa.ServeHTTP(w, r)
 	})
 	router.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			WriteError(w, http.StatusNotFound, "api endpoint not found")
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
+			WriteError(w, http.StatusNotFound, "endpoint not found")
 			return
 		}
 		spa.ServeHTTP(w, r)
 	})
 
-	return router
+	return &Server{router: router, scheduler: monitorScheduler, hub: monitorHub}, nil
+}
+
+func (s *Server) Handler() http.Handler {
+	return s.router
+}
+
+func (s *Server) Close() {
+	if s.scheduler != nil {
+		s.scheduler.Stop()
+	}
+	if s.hub != nil {
+		s.hub.Shutdown()
+	}
+}
+
+func NewRouter(serverConfig ServerConfig) (http.Handler, error) {
+	server, err := NewServer(serverConfig)
+	if err != nil {
+		return nil, err
+	}
+	return server.Handler(), nil
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

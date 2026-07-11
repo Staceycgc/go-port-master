@@ -3,27 +3,76 @@ package ports
 import (
 	"context"
 	"fmt"
-	"net"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 type Service struct {
-	scanner Scanner
+	scanner    Scanner
+	cacheTTL   time.Duration
+	cacheMu    sync.RWMutex
+	cachedScan []PortInfo
+	cacheTime  time.Time
 }
 
 func NewService() *Service {
-	return NewServiceWithScanner(GopsutilScanner{})
+	return NewServiceWithOptions(GopsutilScanner{}, 3*time.Second)
 }
 
 func NewServiceWithScanner(scanner Scanner) *Service {
-	return &Service{scanner: scanner}
+	return NewServiceWithOptions(scanner, 0)
+}
+
+func NewServiceWithOptions(scanner Scanner, cacheTTL time.Duration) *Service {
+	return &Service{scanner: scanner, cacheTTL: cacheTTL}
 }
 
 func (s *Service) ScanAllPorts(ctx context.Context) ([]PortInfo, error) {
-	return s.scanner.ScanAllPorts(ctx)
+	return s.scanAllPorts(ctx, false)
+}
+
+func (s *Service) ScanAllPortsRefresh(ctx context.Context, forceRefresh bool) ([]PortInfo, error) {
+	return s.scanAllPorts(ctx, forceRefresh)
+}
+
+func (s *Service) SetCacheTTL(ttl time.Duration) {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	s.cacheTTL = ttl
+}
+
+func (s *Service) InvalidateCache() {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	s.cachedScan = nil
+	s.cacheTime = time.Time{}
+}
+
+func (s *Service) scanAllPorts(ctx context.Context, forceRefresh bool) ([]PortInfo, error) {
+	s.cacheMu.RLock()
+	ttl := s.cacheTTL
+	cached := s.cachedScan
+	cachedAt := s.cacheTime
+	s.cacheMu.RUnlock()
+
+	if !forceRefresh && ttl > 0 && cached != nil && time.Since(cachedAt) < ttl {
+		return append([]PortInfo(nil), cached...), nil
+	}
+
+	result, err := s.scanner.ScanAllPorts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if ttl > 0 {
+		s.cacheMu.Lock()
+		s.cachedScan = append([]PortInfo(nil), result...)
+		s.cacheTime = time.Now()
+		s.cacheMu.Unlock()
+	}
+	return result, nil
 }
 
 func (s *Service) QueryByPort(ctx context.Context, port int) ([]PortInfo, error) {
@@ -259,17 +308,27 @@ func (s *Service) MonitorPorts(ctx context.Context, request PortMonitorRequest) 
 	if err != nil {
 		return nil, err
 	}
-	portMap := map[int][]PortInfo{}
+	portMap := map[string][]PortInfo{}
 	for _, item := range all {
-		portMap[item.Port] = append(portMap[item.Port], item)
+		protocol := strings.ToUpper(strings.TrimSpace(item.Protocol))
+		if protocol == "" {
+			protocol = "TCP"
+		}
+		key := protocol + ":" + fmt.Sprintf("%d", item.Port)
+		portMap[key] = append(portMap[key], item)
 	}
 
 	results := make([]PortMonitorResult, 0, len(request.Ports))
 	for _, item := range request.Ports {
-		matched := portMap[item.Port]
+		protocol := strings.ToUpper(strings.TrimSpace(item.Protocol))
+		if protocol == "" {
+			protocol = "TCP"
+		}
+		key := protocol + ":" + fmt.Sprintf("%d", item.Port)
+		matched := portMap[key]
 		result := PortMonitorResult{
 			Port:     item.Port,
-			Protocol: item.Protocol,
+			Protocol: protocol,
 			Occupied: len(matched) > 0,
 			Remark:   item.Remark,
 			State:    "FREE",
@@ -322,33 +381,6 @@ func (s *Service) Summary(ctx context.Context) (PortSummary, error) {
 	summary.UniquePortCount = len(uniquePorts)
 	summary.UniquePIDCount = len(uniquePIDs)
 	return summary, nil
-}
-
-func ProbeTCP(host string, port int, timeoutMs int) PortProbeResult {
-	if strings.TrimSpace(host) == "" {
-		host = "127.0.0.1"
-	}
-	if timeoutMs <= 0 {
-		timeoutMs = 3000
-	}
-	start := time.Now()
-	timeout := time.Duration(timeoutMs) * time.Millisecond
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), timeout)
-	latency := time.Since(start).Milliseconds()
-	result := PortProbeResult{
-		Host:      host,
-		Port:      port,
-		Protocol:  "TCP",
-		Reachable: err == nil,
-		LatencyMs: latency,
-	}
-	if err == nil {
-		_ = conn.Close()
-		result.Message = fmt.Sprintf("port %d is reachable (%dms)", port, latency)
-		return result
-	}
-	result.Message = fmt.Sprintf("port %d is not reachable: %v", port, err)
-	return result
 }
 
 func keysInt64(values map[int64]struct{}) []int64 {

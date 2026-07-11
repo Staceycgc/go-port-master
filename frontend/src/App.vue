@@ -1,18 +1,21 @@
-<template>
+﻿<template>
+  <el-config-provider :locale="elementPlusLocale">
   <el-container class="app-container">
+    <div v-if="isMobile && sidebarOpen" class="sidebar-backdrop" @click="closeSidebar" />
     <!-- 左侧分组导航 -->
-    <el-aside width="240px" class="sidebar card-shadow">
+    <el-aside :width="isMobile ? '0px' : '240px'" :class="['sidebar', 'card-shadow', { 'sidebar-open': sidebarOpen }]">
       <div class="sidebar-header">
         <el-icon :size="24" color="#409EFF"><Monitor /></el-icon>
         <span class="logo-text">Port Master</span>
+        <el-tag size="small" type="success" class="version-tag">v2.1</el-tag>
       </div>
 
       <el-menu :default-active="activeGroup" class="group-menu" @select="handleGroupSelect">
         <el-menu-item index="all">
           <el-icon><Grid /></el-icon>
-          <span>全部端口</span>
+          <span>{{ t('sidebar.allPorts') }}</span>
         </el-menu-item>
-        <el-divider content-position="left">端口分组</el-divider>
+        <el-divider content-position="left">{{ t('sidebar.portGroups') }}</el-divider>
         <el-menu-item v-for="group in groups" :key="group.id" :index="group.id">
           <el-icon><Folder /></el-icon>
           <span>{{ group.name }}</span>
@@ -23,11 +26,11 @@
       </el-menu>
 
       <div class="sidebar-actions">
-        <el-button type="primary" size="small" :icon="Plus" @click="showGroupDialog = true">新建分组</el-button>
-        <el-button size="small" :icon="Setting" @click="showGroupManage = true">管理分组</el-button>
+        <el-button type="primary" size="small" :icon="Plus" @click="showGroupDialog = true">{{ t('sidebar.newGroup') }}</el-button>
+        <el-button size="small" :icon="Setting" @click="showGroupManage = true">{{ t('sidebar.manageGroups') }}</el-button>
       </div>
 
-      <el-divider content-position="left">常用端口</el-divider>
+      <el-divider content-position="left">{{ t('sidebar.commonPorts') }}</el-divider>
       <div class="common-ports">
         <el-tag
           v-for="item in commonPorts"
@@ -40,7 +43,7 @@
         </el-tag>
       </div>
 
-      <el-divider content-position="left">操作历史</el-divider>
+      <el-divider content-position="left">{{ t('sidebar.history') }}</el-divider>
       <div class="history-list">
         <div
           v-for="(item, idx) in historyList.slice(0, 10)"
@@ -49,14 +52,19 @@
           @click="handleHistoryClick(item)"
         >
           <el-icon><Clock /></el-icon>
-          <span>{{ item.label }}</span>
+          <span>{{ formatHistoryLabel(item) }}</span>
         </div>
-        <div v-if="historyList.length === 0" class="text-muted" style="padding: 8px">暂无历史记录</div>
+        <div v-if="historyList.length === 0" class="text-muted" style="padding: 8px">{{ t('sidebar.noHistory') }}</div>
       </div>
     </el-aside>
 
     <!-- 主内容区 -->
     <el-container class="main-panel">
+      <div v-if="isMobile" class="mobile-topbar card-shadow">
+        <el-button :icon="sidebarOpen ? Close : Menu" circle :aria-label="t('toolbar.menu')" @click="toggleSidebar" />
+        <span class="mobile-logo">Port Master</span>
+        <el-tag size="small" type="success">v2.1</el-tag>
+      </div>
       <!-- 顶部仪表盘 -->
       <el-header height="auto" class="dashboard-header">
         <DashboardStats :stats="systemStats" :loading="statsLoading" />
@@ -64,9 +72,9 @@
 
       <!-- 权限提示 -->
       <el-alert
-        v-if="permissionHint && !hintDismissed"
+        v-if="permissionHintPresent && !hintDismissed"
         class="permission-banner"
-        :title="permissionHint"
+        :title="permissionBannerText"
         type="warning"
         show-icon
         closable
@@ -77,97 +85,143 @@
       <div class="toolbar card-shadow">
         <div class="toolbar-left">
           <el-button type="primary" :icon="Search" :loading="scanning" @click="handleScanAll()">
-            全量扫描
+            {{ t('toolbar.fullScan') }}
           </el-button>
           <el-input
             v-model="searchKeyword"
-            placeholder="全局搜索：端口 / PID / 进程名"
+            :placeholder="t('toolbar.searchPlaceholder')"
             clearable
-            style="width: 260px"
+            class="toolbar-input toolbar-input-wide"
             :prefix-icon="Search"
             @input="handleSearch"
           />
           <el-input
             v-model="queryPort"
-            placeholder="端口/范围 (8080 或 8000-8100)"
+            :placeholder="t('toolbar.portQuery')"
             clearable
-            style="width: 200px"
+            class="toolbar-input toolbar-input-medium"
             @keyup.enter="handlePortQuery"
           />
           <el-input
             v-model="queryProcess"
-            placeholder="进程名查询"
+            :placeholder="t('toolbar.processQuery')"
             clearable
-            style="width: 150px"
+            class="toolbar-input toolbar-input-small"
             @keyup.enter="handleProcessQuery"
           />
           <el-input
             v-model="queryPid"
-            placeholder="PID 查询"
+            :placeholder="t('toolbar.pidQuery')"
             clearable
-            style="width: 120px"
+            class="toolbar-input toolbar-input-xs"
             @keyup.enter="handlePidQuery"
           />
         </div>
         <div class="toolbar-right">
-          <el-button :icon="Refresh" @click="handleScanAll()">刷新</el-button>
+          <template v-if="!isMobile">
+          <el-button :icon="Refresh" @click="handleScanAll()">{{ t('common.refresh') }}</el-button>
           <el-dropdown @command="handleExport">
             <el-button :icon="Download">
-              导出<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              {{ t('common.export') }}<el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="excel">导出 Excel</el-dropdown-item>
-                <el-dropdown-item command="markdown">导出 Markdown</el-dropdown-item>
-                <el-dropdown-item command="txt">导出 TXT</el-dropdown-item>
+                <el-dropdown-item command="excel">{{ t('toolbar.exportExcel') }}</el-dropdown-item>
+                <el-dropdown-item command="markdown">{{ t('toolbar.exportMarkdown') }}</el-dropdown-item>
+                <el-dropdown-item command="txt">{{ t('toolbar.exportTxt') }}</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
           <el-button :icon="Bell" @click="showMonitorDialog = true">
-            端口监控
+            {{ t('toolbar.monitor') }}
             <el-badge v-if="alertCount > 0" :value="alertCount" class="monitor-badge" />
           </el-button>
-          <el-button :icon="MagicStick" @click="showFreePortDialog = true">空闲端口</el-button>
-          <el-button :icon="Connection" @click="showPortProbe = true">连通探测</el-button>
-          <el-button :icon="List" @click="showProcessList = true">进程列表</el-button>
-          <el-button :icon="Warning" @click="showConflictDialog = true">冲突检测</el-button>
-          <el-button :icon="FolderOpened" @click="showConfigBackup = true">备份</el-button>
-          <el-tooltip :content="isDark ? '切换浅色' : '切换深色'" placement="bottom">
+          <el-button :icon="MagicStick" @click="showFreePortDialog = true">{{ t('toolbar.freePort') }}</el-button>
+          <el-button :icon="Connection" @click="showPortProbe = true">{{ t('toolbar.probe') }}</el-button>
+          <el-button :icon="Monitor" @click="showRemoteDialog = true">{{ t('toolbar.remoteSsh') }}</el-button>
+          <el-button :icon="Box" @click="showDockerDialog = true">{{ t('toolbar.docker') }}</el-button>
+          <el-button :icon="Platform" @click="showK8sDialog = true">{{ t('toolbar.k8s') }}</el-button>
+          <el-button :icon="TrendCharts" @click="showScanHistory = true">{{ t('toolbar.scanHistory') }}</el-button>
+          <el-button :icon="Link" @click="showNetworkDialog = true">{{ t('toolbar.network') }}</el-button>
+          <el-button :icon="List" @click="showProcessList = true">{{ t('toolbar.processList') }}</el-button>
+          <el-button :icon="Warning" @click="showConflictDialog = true">{{ t('toolbar.conflicts') }}</el-button>
+          <el-button :icon="FolderOpened" @click="showConfigBackup = true">{{ t('toolbar.backup') }}</el-button>
+          <el-tooltip :content="isDark ? t('toolbar.switchLight') : t('toolbar.switchDark')" placement="bottom">
             <el-button :icon="isDark ? Sunny : Moon" circle @click="handleToggleTheme" />
           </el-tooltip>
-          <el-button :icon="Setting" @click="showSettings = true">设置</el-button>
+          <el-button :icon="Setting" @click="showSettings = true">{{ t('toolbar.settings') }}</el-button>
+          </template>
+          <template v-else>
+            <el-button :icon="Refresh" @click="handleScanAll()">{{ t('common.refresh') }}</el-button>
+            <el-dropdown @command="handleExport">
+              <el-button :icon="Download">
+                {{ t('common.export') }}<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="excel">{{ t('toolbar.exportExcel') }}</el-dropdown-item>
+                  <el-dropdown-item command="markdown">{{ t('toolbar.exportMarkdown') }}</el-dropdown-item>
+                  <el-dropdown-item command="txt">{{ t('toolbar.exportTxt') }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-dropdown @command="handleMoreTool">
+              <el-button>
+                {{ t('toolbar.moreTools') }}<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="monitor">{{ t('toolbar.monitor') }}</el-dropdown-item>
+                  <el-dropdown-item command="freePort">{{ t('toolbar.freePort') }}</el-dropdown-item>
+                  <el-dropdown-item command="probe">{{ t('toolbar.probe') }}</el-dropdown-item>
+                  <el-dropdown-item command="remote">{{ t('toolbar.remoteSsh') }}</el-dropdown-item>
+                  <el-dropdown-item command="docker">{{ t('toolbar.docker') }}</el-dropdown-item>
+                  <el-dropdown-item command="k8s">{{ t('toolbar.k8s') }}</el-dropdown-item>
+                  <el-dropdown-item command="scanHistory">{{ t('toolbar.scanHistory') }}</el-dropdown-item>
+                  <el-dropdown-item command="network">{{ t('toolbar.network') }}</el-dropdown-item>
+                  <el-dropdown-item command="processList">{{ t('toolbar.processList') }}</el-dropdown-item>
+                  <el-dropdown-item command="conflicts">{{ t('toolbar.conflicts') }}</el-dropdown-item>
+                  <el-dropdown-item command="backup">{{ t('toolbar.backup') }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-tooltip :content="isDark ? t('toolbar.switchLight') : t('toolbar.switchDark')" placement="bottom">
+              <el-button :icon="isDark ? Sunny : Moon" circle @click="handleToggleTheme" />
+            </el-tooltip>
+            <el-button :icon="Setting" @click="showSettings = true">{{ t('toolbar.settings') }}</el-button>
+          </template>
         </div>
       </div>
 
       <!-- 筛选栏 -->
       <div class="filter-bar card-shadow">
-        <el-select v-model="filterProtocol" placeholder="协议" clearable style="width: 100px" @change="applyFilter">
+        <el-select v-model="filterProtocol" :placeholder="t('filter.protocol')" clearable style="width: 100px" @change="applyFilter">
           <el-option label="TCP" value="TCP" />
           <el-option label="UDP" value="UDP" />
         </el-select>
-        <el-select v-model="filterState" placeholder="连接状态" clearable style="width: 130px" @change="applyFilter">
+        <el-select v-model="filterState" :placeholder="t('filter.state')" clearable style="width: 130px" @change="applyFilter">
           <el-option label="LISTEN" value="LISTEN" />
           <el-option label="ESTABLISHED" value="ESTABLISHED" />
           <el-option label="TIME_WAIT" value="TIME_WAIT" />
           <el-option label="FREE" value="FREE" />
         </el-select>
-        <el-checkbox v-model="listenOnly" @change="applyFilter">仅监听端口</el-checkbox>
-        <el-select v-model="filterAddress" placeholder="绑定地址" clearable style="width: 130px" @change="applyFilter">
-          <el-option label="本机 127.0.0.1" value="localhost" />
-          <el-option label="全接口 *" value="all-if" />
+        <el-checkbox v-model="listenOnly" @change="applyFilter">{{ t('filter.listenOnly') }}</el-checkbox>
+        <el-select v-model="filterAddress" :placeholder="t('filter.bindAddress')" clearable style="width: 130px" @change="applyFilter">
+          <el-option :label="t('filter.localhost')" value="localhost" />
+          <el-option :label="t('filter.allInterface')" value="all-if" />
         </el-select>
         <el-checkbox v-model="showDiffOnly" @change="applyFilter" :disabled="!hasDiff">
-          仅看变化 <span v-if="hasDiff" class="diff-hint">(+{{ diffStats.newCount }} / ~{{ diffStats.changed }})</span>
+          {{ t('filter.diffOnly') }} <span v-if="hasDiff" class="diff-hint">(+{{ diffStats.newCount }} / ~{{ diffStats.changed }})</span>
         </el-checkbox>
-        <el-button v-if="filterProtocol || filterState || listenOnly || filterAddress || showDiffOnly" link type="primary" @click="clearFilters">清除筛选</el-button>
+        <el-button v-if="filterProtocol || filterState || listenOnly || filterAddress || showDiffOnly" link type="primary" @click="clearFilters">{{ t('filter.clearFilters') }}</el-button>
       </div>
 
       <!-- 扫描对比提示 -->
       <div v-if="hasDiff" class="diff-bar card-shadow">
-        <span>与上次扫描对比：</span>
-        <el-tag type="success" size="small">新增 {{ diffStats.newCount }}</el-tag>
-        <el-tag type="warning" size="small">变化 {{ diffStats.changed }}</el-tag>
-        <el-tag type="info" size="small">消失 {{ diffStats.removed }}</el-tag>
+        <span>{{ t('diff.compare') }}</span>
+        <el-tag type="success" size="small">{{ t('diff.new') }} {{ diffStats.newCount }}</el-tag>
+        <el-tag type="warning" size="small">{{ t('diff.changed') }} {{ diffStats.changed }}</el-tag>
+        <el-tag type="info" size="small">{{ t('diff.removed') }} {{ diffStats.removed }}</el-tag>
       </div>
 
       <!-- 数据表格 -->
@@ -190,8 +244,8 @@
 
       <!-- 底部统计 -->
       <el-footer height="40px" class="footer-stats">
-        <span>共 {{ filteredData.length }} 条记录</span>
-        <span class="text-muted">| 监听 {{ listenCount }} | 活跃连接 {{ activeCount }}</span>
+        <span>{{ t('footer.total', { count: filteredData.length }) }}</span>
+        <span class="text-muted">| {{ t('footer.listen') }} {{ listenCount }} | {{ t('footer.active') }} {{ activeCount }}</span>
       </el-footer>
     </el-container>
 
@@ -208,6 +262,7 @@
     <MonitorDialog
       v-model="showMonitorDialog"
       @alert="handleMonitorAlert"
+      @monitor-change="handleMonitorChange"
     />
 
     <!-- 分组管理 -->
@@ -240,42 +295,49 @@
     <!-- 配置备份 -->
     <ConfigBackupDialog v-model="showConfigBackup" @imported="handleConfigImported" />
 
+    <!-- v2 新功能 -->
+    <RemoteHostDialog v-model="showRemoteDialog" @scan-result="handleRemoteScanResult" />
+    <DockerDialog v-model="showDockerDialog" @query-port="handleDockerQueryPort" />
+    <ScanHistoryDialog v-model="showScanHistory" />
+    <NetworkDialog v-model="showNetworkDialog" />
+    <K8sDialog v-model="showK8sDialog" @query-port="handleDockerQueryPort" />
+
     <!-- 新建分组 -->
-    <el-dialog v-model="showGroupDialog" title="新建分组" width="400px">
+    <el-dialog v-model="showGroupDialog" :title="t('group.newTitle')" class="pm-dialog pm-dialog-w400" width="94vw">
       <el-form @submit.prevent="createGroup">
-        <el-form-item label="分组名称">
-          <el-input v-model="newGroupName" placeholder="如：微服务、测试环境" />
+        <el-form-item :label="t('group.nameLabel')">
+          <el-input v-model="newGroupName" :placeholder="t('group.namePlaceholder')" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showGroupDialog = false">取消</el-button>
-        <el-button type="primary" @click="createGroup">创建</el-button>
+        <el-button @click="showGroupDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="createGroup">{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 添加到分组 -->
-    <el-dialog v-model="showAddToGroupDialog" title="添加到分组" width="400px">
-      <el-select v-model="targetGroupId" placeholder="选择分组" style="width: 100%">
+    <el-dialog v-model="showAddToGroupDialog" :title="t('group.addTitle')" class="pm-dialog pm-dialog-w400" width="94vw">
+      <el-select v-model="targetGroupId" :placeholder="t('group.selectGroup')" style="width: 100%">
         <el-option v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
       </el-select>
-      <el-input v-model="portRemark" placeholder="备注，如：8080-订单服务" style="margin-top: 12px" />
+      <el-input v-model="portRemark" :placeholder="t('group.remarkPlaceholder')" style="margin-top: 12px" />
       <template #footer>
-        <el-button @click="showAddToGroupDialog = false">取消</el-button>
-        <el-button type="primary" @click="confirmAddToGroup">确定</el-button>
+        <el-button @click="showAddToGroupDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="confirmAddToGroup">{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="authDialogVisible"
-      title="Port Master"
-      width="360px"
+      :title="t('auth.title')"
+      class="pm-dialog pm-dialog-w360 auth-dialog"
+      width="94vw"
       :close-on-click-modal="false"
       :close-on-press-escape="false"
       :show-close="false"
-      class="auth-dialog"
     >
       <el-form @submit.prevent="handleAuthLogin">
-        <el-form-item label="Token">
+        <el-form-item :label="t('auth.token')">
           <el-input
             v-model="authTokenInput"
             type="password"
@@ -286,24 +348,29 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button type="primary" :loading="authLoading" @click="handleAuthLogin">登录</el-button>
+        <el-button type="primary" :loading="authLoading" @click="handleAuthLogin">{{ t('auth.login') }}</el-button>
       </template>
     </el-dialog>
   </el-container>
+  </el-config-provider>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElNotification } from 'element-plus'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import en from 'element-plus/es/locale/lang/en'
 import {
   Search, Refresh, Download, Bell, MagicStick, Plus, Setting,
   Monitor, Grid, Folder, Clock, Warning, ArrowDown, List, Moon, Sunny,
-  Connection, FolderOpened
+  Connection, FolderOpened, Box, TrendCharts, Link, Platform, Menu, Close
 } from '@element-plus/icons-vue'
 import { applyTheme } from '@/utils/theme'
 import { diffScans, getDiffStats } from '@/utils/scanDiff'
+import { recordScanSnapshot } from '@/utils/scanHistory'
 import { getServiceName } from '@/utils/portServices'
-import { exportToExcel, exportToMarkdown, exportToTxt } from '@/utils/export'
+import { exportToExcel, exportToMarkdown, exportToTxt, buildExportColumns } from '@/utils/export'
 import DashboardStats from '@/components/DashboardStats.vue'
 import PortTable from '@/components/PortTable.vue'
 import PortStatsBar from '@/components/PortStatsBar.vue'
@@ -316,9 +383,23 @@ import SettingsDialog from '@/components/SettingsDialog.vue'
 import ConflictDialog from '@/components/ConflictDialog.vue'
 import PortProbeDialog from '@/components/PortProbeDialog.vue'
 import ConfigBackupDialog from '@/components/ConfigBackupDialog.vue'
+import RemoteHostDialog from '@/components/RemoteHostDialog.vue'
+import DockerDialog from '@/components/DockerDialog.vue'
+import ScanHistoryDialog from '@/components/ScanHistoryDialog.vue'
+import NetworkDialog from '@/components/NetworkDialog.vue'
+import K8sDialog from '@/components/K8sDialog.vue'
 import request from '@/api'
 import { clearAuthToken, getAuthToken, setAuthToken } from '@/utils/auth'
+import { connectMonitorWs, disconnectMonitorWs, syncMonitorConfig } from '@/utils/monitorWs'
 import { loadFromStorage, saveToStorage, STORAGE_KEYS, getDefaultGroups, getDefaultSettings, COMMON_PORTS } from '@/utils/storage'
+
+const { t, locale } = useI18n()
+
+const MOBILE_BREAKPOINT = 768
+const isMobile = ref(typeof window !== 'undefined' && window.innerWidth < MOBILE_BREAKPOINT)
+const sidebarOpen = ref(false)
+
+const elementPlusLocale = computed(() => (locale.value === 'en' ? en : zhCn))
 
 const portData = ref([])
 const filteredData = ref([])
@@ -329,7 +410,8 @@ const queryProcess = ref('')
 const queryPid = ref('')
 const systemStats = ref({})
 const statsLoading = ref(false)
-const permissionHint = ref('')
+const permissionHintPresent = ref(false)
+const osCategory = ref('')
 const activeGroup = ref('all')
 const groups = ref([])
 const commonPorts = COMMON_PORTS
@@ -362,6 +444,11 @@ const previousScan = ref([])
 const scanDiffMap = ref(new Map())
 const showPortProbe = ref(false)
 const showConfigBackup = ref(false)
+const showRemoteDialog = ref(false)
+const showDockerDialog = ref(false)
+const showScanHistory = ref(false)
+const showNetworkDialog = ref(false)
+const showK8sDialog = ref(false)
 const probeInitialPort = ref('')
 const authDialogVisible = ref(false)
 const authTokenInput = ref('')
@@ -394,17 +481,58 @@ const isDark = computed(() => settings.value.theme === 'dark')
 const diffStats = computed(() => getDiffStats(scanDiffMap.value))
 const hasDiff = computed(() => diffStats.value.newCount + diffStats.value.changed + diffStats.value.removed > 0)
 
+const permissionBannerText = computed(() => {
+  const category = (osCategory.value || systemStats.value.osType || '').toUpperCase()
+  if (category === 'WINDOWS' || category.includes('WIN')) {
+    return t('permission.windows')
+  }
+  return t('permission.unix')
+})
+
+function toggleSidebar() {
+  sidebarOpen.value = !sidebarOpen.value
+}
+
+function closeSidebar() {
+  sidebarOpen.value = false
+}
+
+function onWindowResize() {
+  isMobile.value = window.innerWidth < MOBILE_BREAKPOINT
+  if (!isMobile.value) sidebarOpen.value = false
+}
+
+function handleMoreTool(command) {
+  switch (command) {
+    case 'monitor': showMonitorDialog.value = true; break
+    case 'freePort': showFreePortDialog.value = true; break
+    case 'probe': showPortProbe.value = true; break
+    case 'remote': showRemoteDialog.value = true; break
+    case 'docker': showDockerDialog.value = true; break
+    case 'k8s': showK8sDialog.value = true; break
+    case 'scanHistory': showScanHistory.value = true; break
+    case 'network': showNetworkDialog.value = true; break
+    case 'processList': showProcessList.value = true; break
+    case 'conflicts': showConflictDialog.value = true; break
+    case 'backup': showConfigBackup.value = true; break
+    default: break
+  }
+}
+
 onMounted(() => {
   loadSettings()
   loadGroups()
   loadHistory()
   window.addEventListener('port-master:auth-required', handleAuthRequired)
+  window.addEventListener('resize', onWindowResize)
   initAuth()
 })
 
 onUnmounted(() => {
   window.removeEventListener('port-master:auth-required', handleAuthRequired)
+  window.removeEventListener('resize', onWindowResize)
   stopTimers()
+  disconnectMonitorWs()
 })
 
 async function initAuth() {
@@ -427,8 +555,9 @@ function startApp() {
   fetchSystemStats()
   fetchSystemInfo()
   handleScanAll()
-  statsTimer = setInterval(fetchSystemStats, 1000)
+  statsTimer = setInterval(fetchSystemStats, 5000)
   setupAutoRefresh()
+  initMonitorWs()
 }
 
 function stopTimers() {
@@ -444,12 +573,13 @@ function handleAuthRequired() {
   authTokenInput.value = ''
   authDialogVisible.value = true
   stopTimers()
+  disconnectMonitorWs()
 }
 
 async function handleAuthLogin() {
   const token = authTokenInput.value.trim()
   if (!token) {
-    ElMessage.warning('请输入 token')
+    ElMessage.warning(t('auth.tokenRequired'))
     return
   }
   authLoading.value = true
@@ -461,6 +591,22 @@ async function handleAuthLogin() {
     startApp()
   } finally {
     authLoading.value = false
+  }
+}
+
+function initMonitorWs() {
+  const config = loadFromStorage(STORAGE_KEYS.MONITOR, { enabled: false, ports: [] })
+  if (config.enabled && config.ports?.length) {
+    connectMonitorWs(handleMonitorAlert)
+    syncMonitorConfig(request, config).catch(() => {})
+  }
+}
+
+function handleMonitorChange(config) {
+  if (config.enabled) {
+    connectMonitorWs(handleMonitorAlert)
+  } else {
+    disconnectMonitorWs()
   }
 }
 
@@ -483,7 +629,7 @@ function handleToggleTheme() {
   settings.value = { ...settings.value, theme: next }
   applyTheme(next)
   saveToStorage(STORAGE_KEYS.SETTINGS, settings.value)
-  ElMessage.success(next === 'dark' ? '已切换为深色主题' : '已切换为浅色主题')
+  ElMessage.success(next === 'dark' ? t('settings.themeDark') : t('settings.themeLight'))
 }
 
 function setupAutoRefresh() {
@@ -522,18 +668,24 @@ function handleConfigImported() {
 }
 
 function loadGroups() {
-  groups.value = loadFromStorage(STORAGE_KEYS.GROUPS, getDefaultGroups())
+  const locale = settings.value?.locale || 'zh-CN'
+  groups.value = loadFromStorage(STORAGE_KEYS.GROUPS, getDefaultGroups(locale))
 }
 
 function loadHistory() {
   historyList.value = loadFromStorage(STORAGE_KEYS.HISTORY, [])
 }
 
-function addHistory(label, action) {
-  const item = { label, action, time: new Date().toISOString() }
+function addHistory(key, action, params = {}) {
+  const item = { key, params, action, time: new Date().toISOString() }
   historyList.value.unshift(item)
   historyList.value = historyList.value.slice(0, 50)
   saveToStorage(STORAGE_KEYS.HISTORY, historyList.value)
+}
+
+function formatHistoryLabel(item) {
+  if (item.key) return t(item.key, item.params || {})
+  return item.label || ''
 }
 
 async function fetchSystemStats() {
@@ -548,14 +700,18 @@ async function fetchSystemStats() {
 async function fetchSystemInfo() {
   try {
     const res = await request.get('/system/info')
-    permissionHint.value = res.data.permissionHint
+    permissionHintPresent.value = !!res.data?.permissionHint
+    osCategory.value = res.data?.osCategory || res.data?.osType || ''
+    if (res.data?.osType) {
+      systemStats.value = { ...systemStats.value, osType: res.data.osType }
+    }
   } catch { /* ignore */ }
 }
 
 async function handleScanAll(silent = false) {
   scanning.value = true
   try {
-    const res = await request.get('/ports/scan')
+    const res = await request.get('/ports/scan', { params: { refresh: silent ? false : true } })
     const newData = res.data || []
     if (portData.value.length > 0) {
       previousScan.value = [...portData.value]
@@ -567,12 +723,25 @@ async function handleScanAll(silent = false) {
     await fetchConflicts()
     applyFilter()
     if (!silent) {
-      addHistory('全量端口扫描', 'scan')
-      const diffHint = hasDiff.value ? `，变化 +${diffStats.value.newCount}/~${diffStats.value.changed}` : ''
-      ElMessage.success(`扫描完成，共 ${portData.value.length} 条记录${diffHint}`)
+      recordScanSnapshot(portData.value, conflicts.value.length)
+      addHistory('history.fullScan', 'scan')
+      const diffHint = hasDiff.value ? ` (+${diffStats.value.newCount}/~${diffStats.value.changed})` : ''
+      ElMessage.success(t('messages.scanDone', { count: portData.value.length, diff: diffHint }))
     }
   } catch { /* handled by interceptor */ }
   finally { scanning.value = false }
+}
+
+function handleRemoteScanResult(data) {
+  portData.value = data || []
+  activeGroup.value = 'all'
+  applyFilter()
+  ElMessage.info(t('remote.loadedToTable'))
+}
+
+function handleDockerQueryPort(ports) {
+  queryPort.value = ports
+  handlePortQuery()
 }
 
 function handleQuickProbe(port) {
@@ -670,9 +839,10 @@ function handleSearch() {
 function handleGroupSelect(index) {
   activeGroup.value = index
   applyFilter()
+  closeSidebar()
   if (index !== 'all') {
     const group = groups.value.find(g => g.id === index)
-    if (group) addHistory(`查看分组: ${group.name}`, 'group')
+    if (group) addHistory('history.viewGroup', 'group', { name: group.name })
   }
 }
 
@@ -684,7 +854,7 @@ async function handlePortQuery() {
     portData.value = res.data || []
     activeGroup.value = 'all'
     applyFilter()
-    addHistory(`端口查询: ${queryPort.value}`, 'query')
+    addHistory('history.portQuery', 'query', { query: queryPort.value })
   } finally { scanning.value = false }
 }
 
@@ -696,7 +866,7 @@ async function handleProcessQuery() {
     portData.value = res.data || []
     activeGroup.value = 'all'
     applyFilter()
-    addHistory(`进程查询: ${queryProcess.value}`, 'query')
+    addHistory('history.processQuery', 'query', { process: queryProcess.value })
   } finally { scanning.value = false }
 }
 
@@ -708,7 +878,7 @@ async function handlePidQuery() {
     portData.value = res.data || []
     activeGroup.value = 'all'
     applyFilter()
-    addHistory(`PID 查询: ${queryPid.value}`, 'query')
+    addHistory('history.pidQuery', 'query', { pid: queryPid.value })
   } finally { scanning.value = false }
 }
 
@@ -720,10 +890,21 @@ function quickSearchPort(port) {
 function handleHistoryClick(item) {
   if (item.action === 'scan') handleScanAll()
   else if (item.action === 'query') {
-    const match = item.label.match(/:\s*(.+)$/)
-    if (match) {
-      queryPort.value = match[1]
+    if (item.params?.query) {
+      queryPort.value = item.params.query
       handlePortQuery()
+    } else if (item.params?.process) {
+      queryProcess.value = item.params.process
+      handleProcessQuery()
+    } else if (item.params?.pid) {
+      queryPid.value = item.params.pid
+      handlePidQuery()
+    } else if (item.label) {
+      const match = item.label.match(/:\s*(.+)$/)
+      if (match) {
+        queryPort.value = match[1]
+        handlePortQuery()
+      }
     }
   }
 }
@@ -749,9 +930,9 @@ async function handleKillByPort(port, force) {
   try {
     const url = force ? `/process/by-port/${port}/force` : `/process/by-port/${port}`
     const res = await request.delete(url)
-    ElMessage.success('端口释放操作完成')
+    ElMessage.success(t('messages.freePortDone'))
     res.data.forEach(msg => ElMessage.info(msg))
-    addHistory(`${force ? '强杀' : '释放'}端口 ${port}`, 'kill')
+    addHistory(force ? 'history.forceFreePort' : 'history.freePort', 'kill', { port })
     handleScanAll()
   } catch { /* handled */ }
 }
@@ -760,8 +941,8 @@ async function handleKill(pid, force) {
   try {
     const url = force ? `/process/${pid}/force` : `/process/${pid}`
     const res = await request.delete(url)
-    ElMessage.success(res.message || '操作成功')
-    addHistory(`${force ? '强制杀死' : '结束'}进程 PID:${pid}`, 'kill')
+    ElMessage.success(res.message || t('messages.killSuccess'))
+    addHistory(force ? 'history.forceKillProcess' : 'history.killProcess', 'kill', { pid })
     handleScanAll()
   } catch { /* handled */ }
 }
@@ -769,31 +950,35 @@ async function handleKill(pid, force) {
 async function handleBatchKill(pids, force) {
   try {
     const res = await request.post('/process/kill/batch', { pids, force })
-    ElMessage.success('批量操作完成')
+    ElMessage.success(t('messages.batchDone'))
     res.data.forEach(msg => ElMessage.info(msg))
-    addHistory(`批量${force ? '强杀' : '结束'} ${pids.length} 个进程`, 'kill')
+    addHistory(force ? 'history.batchForceKill' : 'history.batchKill', 'kill', { count: pids.length })
     handleScanAll()
   } catch { /* handled */ }
 }
 
 function handleExport(format) {
   if (filteredData.value.length === 0) {
-    ElMessage.warning('没有可导出的数据')
+    ElMessage.warning(t('messages.noExport'))
     return
   }
   const filename = `ports_${new Date().toISOString().slice(0, 10)}`
-  if (format === 'excel') exportToExcel(filteredData.value, filename)
-  else if (format === 'markdown') exportToMarkdown(filteredData.value, filename)
-  else exportToTxt(filteredData.value, filename)
-  ElMessage.success('导出成功')
+  const columns = buildExportColumns(t)
+  if (format === 'excel') exportToExcel(filteredData.value, filename, columns)
+  else if (format === 'markdown') exportToMarkdown(filteredData.value, filename, columns)
+  else exportToTxt(filteredData.value, filename, columns)
+  ElMessage.success(t('messages.exportSuccess'))
 }
 
 function handleMonitorAlert(alerts) {
   alertCount.value = alerts.length
   alerts.forEach(a => {
+    const msg = a.occupied
+      ? t('monitor.alertOccupied', { port: a.port })
+      : t('monitor.alertReleased', { port: a.port })
     ElNotification({
-      title: '端口监控告警',
-      message: `端口 ${a.port} ${a.occupied ? '已被占用' : '已释放'}${a.processName ? ' - ' + a.processName : ''}`,
+      title: t('monitor.alertTitle'),
+      message: msg + (a.processName ? ' - ' + a.processName : ''),
       type: 'warning',
       duration: 8000,
       position: 'top-right'
@@ -803,7 +988,7 @@ function handleMonitorAlert(alerts) {
 
 function createGroup() {
   if (!newGroupName.value.trim()) {
-    ElMessage.warning('请输入分组名称')
+    ElMessage.warning(t('group.nameRequired'))
     return
   }
   groups.value.push({
@@ -814,18 +999,18 @@ function createGroup() {
   saveToStorage(STORAGE_KEYS.GROUPS, groups.value)
   newGroupName.value = ''
   showGroupDialog.value = false
-  ElMessage.success('分组创建成功')
+  ElMessage.success(t('group.created'))
 }
 
 function handleAddToGroup(row) {
   addPortItem.value = row
-  portRemark.value = `${row.port}-${row.processName || '未命名'}`
+  portRemark.value = `${row.port}-${row.processName || t('group.unnamedProcess')}`
   showAddToGroupDialog.value = true
 }
 
 function confirmAddToGroup() {
   if (!targetGroupId.value) {
-    ElMessage.warning('请选择分组')
+    ElMessage.warning(t('group.selectRequired'))
     return
   }
   const group = groups.value.find(g => g.id === targetGroupId.value)
@@ -834,9 +1019,9 @@ function confirmAddToGroup() {
     if (!exists) {
       group.ports.push({ port: addPortItem.value.port, remark: portRemark.value })
       saveToStorage(STORAGE_KEYS.GROUPS, groups.value)
-      ElMessage.success('已添加到分组')
+      ElMessage.success(t('group.added'))
     } else {
-      ElMessage.info('该端口已在分组中')
+      ElMessage.info(t('group.alreadyInGroup'))
     }
   }
   showAddToGroupDialog.value = false
@@ -846,15 +1031,20 @@ function confirmAddToGroup() {
 <style scoped>
 .app-container {
   height: 100vh;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 .sidebar {
   background: var(--pm-bg-card);
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
   overflow-y: auto;
   border-right: 1px solid var(--pm-border);
-  transition: background-color 0.25s, border-color 0.25s;
+  transition: background-color 0.25s, border-color 0.25s, transform 0.25s ease;
+  flex-shrink: 0;
 }
 
 .sidebar-header {
@@ -871,6 +1061,10 @@ function confirmAddToGroup() {
   color: var(--pm-text-primary);
 }
 
+.version-tag {
+  margin-left: auto;
+}
+
 .group-menu {
   border-right: none;
   flex: 1;
@@ -883,7 +1077,12 @@ function confirmAddToGroup() {
 .sidebar-actions {
   padding: 8px 12px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.sidebar-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .common-ports {
@@ -928,6 +1127,7 @@ function confirmAddToGroup() {
 .dashboard-header {
   padding: 12px 16px 0;
   background: var(--pm-bg-page);
+  min-width: 0;
 }
 
 .filter-bar {
@@ -939,12 +1139,16 @@ function confirmAddToGroup() {
   background: var(--pm-bg-card);
   border-radius: 8px;
   transition: background-color 0.25s;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: calc(100% - 32px);
+  box-sizing: border-box;
 }
 
 .toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   padding: 12px 16px;
   margin: 12px 16px 0;
   background: var(--pm-bg-card);
@@ -952,6 +1156,9 @@ function confirmAddToGroup() {
   flex-wrap: wrap;
   gap: 8px;
   transition: background-color 0.25s;
+  min-width: 0;
+  max-width: calc(100% - 32px);
+  box-sizing: border-box;
 }
 
 .toolbar-left, .toolbar-right {
@@ -959,13 +1166,144 @@ function confirmAddToGroup() {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
+.toolbar-input-wide { width: 260px; max-width: 100%; }
+.toolbar-input-medium { width: 200px; max-width: 100%; }
+.toolbar-input-small { width: 150px; max-width: 100%; }
+.toolbar-input-xs { width: 120px; max-width: 100%; }
+
 .main-panel {
-  flex: 1;
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+}
+
+.mobile-topbar {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 8px 8px 0;
+  background: var(--pm-bg-card);
+  border-radius: 8px;
+}
+
+.mobile-logo {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--pm-text-primary);
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .app-container {
+    height: auto;
+    min-height: 100vh;
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+
+  .app-container > .sidebar {
+    flex: 0 0 0 !important;
+    min-width: 0 !important;
+    overflow: visible;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 2001;
+    width: min(280px, 86vw) !important;
+    transform: translateX(-105%);
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  .mobile-topbar {
+    display: flex;
+  }
+
+  .toolbar-left,
+  .toolbar-right {
+    width: 100%;
+  }
+
+  .toolbar-left {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toolbar-input-wide,
+  .toolbar-input-medium,
+  .toolbar-input-small,
+  .toolbar-input-xs {
+    width: 100%;
+  }
+
+  .filter-bar {
+    margin-left: 8px;
+    margin-right: 8px;
+    max-width: calc(100% - 16px);
+  }
+
+  .filter-bar :deep(.el-select) {
+    max-width: 100%;
+  }
+
+  .toolbar,
+  .permission-banner,
+  .diff-bar,
+  .dashboard-header {
+    margin-left: 8px;
+    margin-right: 8px;
+  }
+
+  .main-content {
+    flex: none;
+    min-height: 480px;
+    padding: 8px;
+    overflow: visible;
+  }
+
+  .main-content :deep(.port-table-wrapper) {
+    flex: none;
+    min-height: 440px;
+  }
+
+  .main-panel {
+    height: auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+
+  .footer-stats {
+    flex-wrap: wrap;
+    height: auto !important;
+    min-height: 40px;
+    padding: 8px;
+  }
 }
 
 .permission-banner {
@@ -976,6 +1314,7 @@ function confirmAddToGroup() {
 .main-content {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   padding: 12px 16px;
   overflow: hidden;
   display: flex;
@@ -1001,6 +1340,7 @@ function confirmAddToGroup() {
   border-top: 1px solid var(--pm-border);
   font-size: 13px;
   transition: background-color 0.25s, border-color 0.25s;
+  min-width: 0;
 }
 
 .monitor-badge {
@@ -1016,6 +1356,8 @@ function confirmAddToGroup() {
   background: var(--pm-bg-card);
   border-radius: 8px;
   font-size: 13px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .diff-hint {

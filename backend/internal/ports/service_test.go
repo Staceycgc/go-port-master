@@ -64,7 +64,7 @@ func TestProbeTCP(t *testing.T) {
 	addr := listener.Addr().(*net.TCPAddr)
 	defer listener.Close()
 
-	reachable := ProbeTCP("127.0.0.1", addr.Port, 500)
+	reachable := ProbeTCP(context.Background(), "127.0.0.1", addr.Port, 500, false)
 	if !reachable.Reachable {
 		t.Fatalf("expected reachable probe, got %#v", reachable)
 	}
@@ -72,7 +72,7 @@ func TestProbeTCP(t *testing.T) {
 	if err := listener.Close(); err != nil {
 		t.Fatalf("close listener: %v", err)
 	}
-	closed := ProbeTCP("127.0.0.1", addr.Port, 200)
+	closed := ProbeTCP(context.Background(), "127.0.0.1", addr.Port, 200, false)
 	if closed.Reachable {
 		t.Fatalf("expected closed probe to be unreachable, got %#v", closed)
 	}

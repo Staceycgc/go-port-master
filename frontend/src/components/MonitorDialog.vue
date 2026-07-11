@@ -2,48 +2,54 @@
   <el-dialog
     :model-value="modelValue"
     @update:model-value="$emit('update:modelValue', $event)"
-    title="端口监控告警"
-    width="600px"
+    :title="t('monitor.title')"
+    class="pm-dialog pm-dialog-w600"
+    width="94vw"
     @open="loadConfig"
-    @close="stopMonitor"
   >
     <el-alert
-      title="监控配置保存在浏览器本地，后端定时轮询探测端口状态变化"
+      :title="t('monitor.hint')"
       type="info"
       show-icon
       :closable="false"
       style="margin-bottom: 16px"
     />
 
+    <div class="monitor-status">
+      <el-tag :type="wsStatus === 'open' ? 'success' : 'info'" size="small">
+        {{ wsStatusLabel }}
+      </el-tag>
+    </div>
+
     <div class="monitor-form">
-      <el-input v-model="newPort" placeholder="端口号" style="width: 120px" @keyup.enter="addPort" />
-      <el-input v-model="newRemark" placeholder="备注" style="width: 200px" />
-      <el-button type="primary" @click="addPort">添加监控</el-button>
-      <el-switch v-model="monitorEnabled" active-text="启用监控" @change="toggleMonitor" />
+      <el-input v-model="newPort" :placeholder="t('monitor.portPlaceholder')" style="width: 120px" @keyup.enter="addPort" />
+      <el-input v-model="newRemark" :placeholder="t('monitor.remarkPlaceholder')" style="width: 200px" />
+      <el-button type="primary" @click="addPort">{{ t('monitor.add') }}</el-button>
+      <el-switch v-model="monitorEnabled" :active-text="t('monitor.enable')" @change="toggleMonitor" />
     </div>
 
     <el-table :data="monitorList" size="small" border style="margin-top: 12px">
-      <el-table-column prop="port" label="端口" width="80" />
-      <el-table-column prop="remark" label="备注" />
-      <el-table-column prop="expectedState" label="期望状态" width="100">
+      <el-table-column prop="port" :label="t('monitor.port')" width="80" />
+      <el-table-column prop="remark" :label="t('monitor.remark')" />
+      <el-table-column prop="expectedState" :label="t('monitor.expectedState')" width="100">
         <template #default="{ row }">
           <el-select v-model="row.expectedState" size="small" @change="saveConfig">
-            <el-option label="任意" value="any" />
-            <el-option label="占用" value="occupied" />
-            <el-option label="空闲" value="free" />
+            <el-option :label="t('monitor.any')" value="any" />
+            <el-option :label="t('monitor.occupied')" value="occupied" />
+            <el-option :label="t('monitor.free')" value="free" />
           </el-select>
         </template>
       </el-table-column>
-      <el-table-column label="当前状态" width="100">
+      <el-table-column :label="t('monitor.currentState')" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.lastOccupied ? 'danger' : 'success'" size="small">
-            {{ row.lastOccupied ? '占用' : '空闲' }}
+          <el-tag :type="occupancyTagType(row.lastOccupied)" size="small">
+            {{ formatOccupied(row.lastOccupied) }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="80">
+      <el-table-column :label="t('common.action')" width="80">
         <template #default="{ $index }">
-          <el-button link type="danger" size="small" @click="removePort($index)">删除</el-button>
+          <el-button link type="danger" size="small" @click="removePort($index)">{{ t('common.delete') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -51,53 +57,80 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import request from '@/api'
 import { loadFromStorage, saveToStorage, STORAGE_KEYS } from '@/utils/storage'
+import { syncMonitorConfig, connectMonitorWs, disconnectMonitorWs, getMonitorWsStatus } from '@/utils/monitorWs'
 
 defineProps({ modelValue: Boolean })
-const emit = defineEmits(['update:modelValue', 'alert'])
+const emit = defineEmits(['update:modelValue', 'alert', 'monitor-change'])
+
+const { t } = useI18n()
 
 const monitorList = ref([])
 const monitorEnabled = ref(false)
 const newPort = ref('')
 const newRemark = ref('')
-let monitorTimer = null
-let lastSnapshot = {}
+const wsStatus = ref('closed')
+
+const wsStatusLabel = computed(() => {
+  if (wsStatus.value === 'open') return t('monitor.wsConnected')
+  if (wsStatus.value === 'connecting') return t('monitor.wsConnecting')
+  return t('monitor.wsDisconnected')
+})
+
+function formatOccupied(value) {
+  if (value === null || value === undefined) return t('monitor.unknown')
+  return value ? t('monitor.occupied') : t('monitor.free')
+}
+
+function occupancyTagType(value) {
+  if (value === null || value === undefined) return 'info'
+  return value ? 'danger' : 'success'
+}
 
 function loadConfig() {
   const config = loadFromStorage(STORAGE_KEYS.MONITOR, { enabled: false, ports: [] })
   monitorList.value = config.ports || []
   monitorEnabled.value = config.enabled || false
-  lastSnapshot = {}
-  monitorList.value.forEach(p => {
-    lastSnapshot[p.port] = p.lastOccupied
-  })
-  if (monitorEnabled.value) startMonitor()
+  wsStatus.value = getMonitorWsStatus()
+  if (monitorEnabled.value) {
+    ensureMonitorWs()
+    pushConfigToServer()
+  }
+  refreshMonitorStatus()
+}
+
+async function pushConfigToServer() {
+  const config = { enabled: monitorEnabled.value, ports: monitorList.value }
+  try {
+    await syncMonitorConfig(request, config)
+  } catch { /* ignore */ }
 }
 
 function saveConfig() {
-  saveToStorage(STORAGE_KEYS.MONITOR, {
-    enabled: monitorEnabled.value,
-    ports: monitorList.value
-  })
+  const config = { enabled: monitorEnabled.value, ports: monitorList.value }
+  saveToStorage(STORAGE_KEYS.MONITOR, config)
+  pushConfigToServer()
+  emit('monitor-change', config)
 }
 
 function addPort() {
   const port = parseInt(newPort.value)
   if (!port || port < 1 || port > 65535) {
-    ElMessage.warning('请输入有效端口号')
+    ElMessage.warning(t('monitor.invalidPort'))
     return
   }
   if (monitorList.value.some(p => p.port === port)) {
-    ElMessage.info('该端口已在监控列表中')
+    ElMessage.info(t('monitor.alreadyExists'))
     return
   }
   monitorList.value.push({
     port,
     protocol: 'TCP',
-    remark: newRemark.value || `端口 ${port}`,
+    remark: newRemark.value || t('monitor.defaultRemark', { port }),
     expectedState: 'any',
     lastOccupied: null
   })
@@ -114,25 +147,27 @@ function removePort(index) {
 function toggleMonitor(enabled) {
   monitorEnabled.value = enabled
   saveConfig()
-  if (enabled) startMonitor()
-  else stopMonitor()
-}
-
-function startMonitor() {
-  stopMonitor()
-  pollMonitor()
-  monitorTimer = setInterval(pollMonitor, 5000)
-}
-
-function stopMonitor() {
-  if (monitorTimer) {
-    clearInterval(monitorTimer)
-    monitorTimer = null
+  if (enabled) {
+    ensureMonitorWs()
+  } else {
+    disconnectMonitorWs()
+    wsStatus.value = 'closed'
+    emit('monitor-change', { enabled: false, ports: monitorList.value })
   }
 }
 
-async function pollMonitor() {
+function ensureMonitorWs() {
+  connectMonitorWs((alerts) => {
+    emit('alert', alerts)
+  }, (status) => {
+    wsStatus.value = status
+  })
+  wsStatus.value = getMonitorWsStatus()
+}
+
+async function refreshMonitorStatus() {
   if (monitorList.value.length === 0) return
+  wsStatus.value = getMonitorWsStatus()
   try {
     const res = await request.post('/ports/monitor', {
       ports: monitorList.value.map(p => ({
@@ -143,32 +178,11 @@ async function pollMonitor() {
       }))
     })
     const results = res.data || []
-    const alerts = []
-
     results.forEach(r => {
       const item = monitorList.value.find(p => p.port === r.port)
-      if (!item) return
-
-      const prev = lastSnapshot[r.port]
-      const changed = prev !== undefined && prev !== null && prev !== r.occupied
-
-      if (changed) {
-        alerts.push(r)
-      }
-
-      // 期望状态告警
-      if (item.expectedState === 'occupied' && !r.occupied) {
-        alerts.push({ ...r, remark: item.remark, _reason: '期望占用但已释放' })
-      } else if (item.expectedState === 'free' && r.occupied) {
-        alerts.push({ ...r, remark: item.remark, _reason: '期望空闲但被占用' })
-      }
-
-      item.lastOccupied = r.occupied
-      lastSnapshot[r.port] = r.occupied
+      if (item) item.lastOccupied = r.occupied
     })
-
-    saveConfig()
-    if (alerts.length > 0) emit('alert', alerts)
+    saveToStorage(STORAGE_KEYS.MONITOR, { enabled: monitorEnabled.value, ports: monitorList.value })
   } catch { /* ignore */ }
 }
 </script>
@@ -179,5 +193,8 @@ async function pollMonitor() {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+.monitor-status {
+  margin-bottom: 8px;
 }
 </style>

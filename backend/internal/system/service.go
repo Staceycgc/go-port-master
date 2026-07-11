@@ -115,11 +115,12 @@ type cpuUsageProvider interface {
 	Usage(ctx context.Context) (float64, bool)
 }
 
-func Info(authRequired bool) map[string]interface{} {
+func Info(authRequired bool, version string) map[string]interface{} {
 	return map[string]interface{}{
 		"osType":         runtime.GOOS,
 		"osCategory":     osCategory(),
 		"goVersion":      runtime.Version(),
+		"version":        version,
 		"authRequired":   authRequired,
 		"permissionHint": permissionHint(),
 	}

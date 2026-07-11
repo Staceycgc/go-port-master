@@ -1,16 +1,20 @@
 import { loadFromStorage, saveToStorage, STORAGE_KEYS, getDefaultGroups, getDefaultSettings } from './storage'
+import { getLocale } from '@/i18n'
+import { sanitizeRemoteHosts } from './remoteHostsSanitize'
 
 /**
  * 导出全部本地配置为 JSON
  */
 export function exportConfig() {
   return {
-    version: '1.0',
+    version: '2.1',
     exportedAt: new Date().toISOString(),
-    groups: loadFromStorage(STORAGE_KEYS.GROUPS, getDefaultGroups()),
+    groups: loadFromStorage(STORAGE_KEYS.GROUPS, getDefaultGroups(getLocale())),
     monitor: loadFromStorage(STORAGE_KEYS.MONITOR, { enabled: false, ports: [] }),
     history: loadFromStorage(STORAGE_KEYS.HISTORY, []),
-    settings: loadFromStorage(STORAGE_KEYS.SETTINGS, getDefaultSettings())
+    settings: loadFromStorage(STORAGE_KEYS.SETTINGS, getDefaultSettings()),
+    remoteHosts: sanitizeRemoteHosts(loadFromStorage(STORAGE_KEYS.REMOTE_HOSTS, [])),
+    scanHistory: loadFromStorage(STORAGE_KEYS.SCAN_HISTORY, [])
   }
 }
 
@@ -34,5 +38,7 @@ export function importConfig(json) {
   if (data.monitor) saveToStorage(STORAGE_KEYS.MONITOR, data.monitor)
   if (data.history) saveToStorage(STORAGE_KEYS.HISTORY, data.history)
   if (data.settings) saveToStorage(STORAGE_KEYS.SETTINGS, data.settings)
+  if (data.remoteHosts) saveToStorage(STORAGE_KEYS.REMOTE_HOSTS, sanitizeRemoteHosts(data.remoteHosts))
+  if (data.scanHistory) saveToStorage(STORAGE_KEYS.SCAN_HISTORY, data.scanHistory)
   return data
 }

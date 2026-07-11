@@ -12,7 +12,8 @@ import (
 
 func registerPortRoutes(r chi.Router, service *ports.Service) {
 	r.Get("/ports/scan", func(w http.ResponseWriter, r *http.Request) {
-		result, err := service.ScanAllPorts(r.Context())
+		forceRefresh := r.URL.Query().Get("refresh") == "true"
+		result, err := service.ScanAllPortsRefresh(r.Context(), forceRefresh)
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -128,12 +129,21 @@ func registerPortRoutes(r chi.Router, service *ports.Service) {
 			WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		timeout, err := queryInt(r, "timeout", 3000)
-		if err != nil {
-			WriteError(w, http.StatusBadRequest, err.Error())
+		if err := ports.ValidateProbePort(port); err != nil {
+			writeProbeInputError(w, err)
 			return
 		}
-		WriteSuccess(w, ports.ProbeTCP(r.URL.Query().Get("host"), port, timeout))
+		host, err := ports.ResolveProbeHost(r.URL.Query().Get("host"))
+		if err != nil {
+			writeProbeInputError(w, err)
+			return
+		}
+		timeoutMs, timeoutExplicit, err := queryProbeTimeout(r)
+		if err != nil {
+			writeProbeInputError(w, err)
+			return
+		}
+		WriteSuccess(w, ports.ProbeTCP(r.Context(), host, port, timeoutMs, timeoutExplicit))
 	})
 
 	r.Post("/ports/probe/batch", func(w http.ResponseWriter, r *http.Request) {
@@ -146,14 +156,73 @@ func registerPortRoutes(r chi.Router, service *ports.Service) {
 			WriteError(w, http.StatusBadRequest, "invalid probe request")
 			return
 		}
-		if body.Timeout == 0 {
-			body.Timeout = 3000
+		if err := ports.ValidateBatchPorts(body.Ports); err != nil {
+			writeProbeInputError(w, err)
+			return
 		}
-		results := make([]ports.PortProbeResult, 0, len(body.Ports))
-		for _, port := range body.Ports {
-			results = append(results, ports.ProbeTCP(body.Host, port, body.Timeout))
+		host, err := ports.ResolveProbeHost(body.Host)
+		if err != nil {
+			writeProbeInputError(w, err)
+			return
+		}
+		timeoutExplicit := body.Timeout != 0
+		results, err := ports.ProbeTCPBatch(r.Context(), host, body.Ports, body.Timeout, timeoutExplicit)
+		if err != nil {
+			writeProbeInputError(w, err)
+			return
 		}
 		WriteSuccess(w, results)
+	})
+
+	r.Get("/ports/probe/tls", func(w http.ResponseWriter, r *http.Request) {
+		port, err := queryInt(r, "port", 0)
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := ports.ValidateProbePort(port); err != nil {
+			writeProbeInputError(w, err)
+			return
+		}
+		host, err := ports.ResolveProbeHost(r.URL.Query().Get("host"))
+		if err != nil {
+			writeProbeInputError(w, err)
+			return
+		}
+		timeoutMs, timeoutExplicit, err := queryProbeTimeout(r)
+		if err != nil {
+			writeProbeInputError(w, err)
+			return
+		}
+		WriteSuccess(w, ports.ProbeTLS(r.Context(), host, port, timeoutMs, timeoutExplicit))
+	})
+
+	r.Get("/ports/probe/http", func(w http.ResponseWriter, r *http.Request) {
+		port, err := queryInt(r, "port", 0)
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := ports.ValidateProbePort(port); err != nil {
+			writeProbeInputError(w, err)
+			return
+		}
+		host, err := ports.ResolveProbeHost(r.URL.Query().Get("host"))
+		if err != nil {
+			writeProbeInputError(w, err)
+			return
+		}
+		path, err := probeHTTPPath(r)
+		if err != nil {
+			writeProbeInputError(w, err)
+			return
+		}
+		timeoutMs, timeoutExplicit, err := queryProbeTimeout(r)
+		if err != nil {
+			writeProbeInputError(w, err)
+			return
+		}
+		WriteSuccess(w, ports.ProbeHTTP(r.Context(), host, port, path, timeoutMs, timeoutExplicit))
 	})
 
 	r.Post("/ports/monitor", func(w http.ResponseWriter, r *http.Request) {
@@ -185,4 +254,34 @@ func pathInt(r *http.Request, key string) (int, error) {
 
 func pathInt64(r *http.Request, key string) (int64, error) {
 	return strconv.ParseInt(chi.URLParam(r, key), 10, 64)
+}
+
+func queryProbeTimeout(r *http.Request) (timeoutMs int, explicit bool, err error) {
+	raw := r.URL.Query().Get("timeout")
+	if raw == "" {
+		return 0, false, nil
+	}
+	timeoutMs, err = strconv.Atoi(raw)
+	if err != nil {
+		return 0, true, ports.ErrInvalidProbeInput
+	}
+	if _, err := ports.ValidateProbeTimeout(timeoutMs, true); err != nil {
+		return 0, true, err
+	}
+	return timeoutMs, true, nil
+}
+
+func probeHTTPPath(r *http.Request) (string, error) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		return "/", nil
+	}
+	normalizedPath, rawQuery, err := ports.ValidateHTTPPath(path)
+	if err != nil {
+		return "", err
+	}
+	if rawQuery != "" {
+		return normalizedPath + "?" + rawQuery, nil
+	}
+	return normalizedPath, nil
 }

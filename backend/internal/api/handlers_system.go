@@ -5,10 +5,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"port-master/backend/internal/config"
 	"port-master/backend/internal/system"
 )
 
-func registerSystemRoutes(r chi.Router, service *system.Service, authRequired bool) {
+func registerSystemRoutes(r chi.Router, service *system.Service, authRequired bool, appConfig config.Config) {
 	r.Get("/system/stats", func(w http.ResponseWriter, r *http.Request) {
 		result, err := service.Stats(r.Context())
 		if err != nil {
@@ -19,6 +20,10 @@ func registerSystemRoutes(r chi.Router, service *system.Service, authRequired bo
 	})
 
 	r.Get("/system/info", func(w http.ResponseWriter, r *http.Request) {
-		WriteSuccess(w, system.Info(authRequired))
+		WriteSuccess(w, system.Info(authRequired, config.Version))
+	})
+
+	r.Get("/system/config", func(w http.ResponseWriter, r *http.Request) {
+		WriteSuccess(w, appConfig.PublicMap())
 	})
 }

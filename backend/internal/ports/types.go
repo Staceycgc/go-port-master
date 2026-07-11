@@ -39,12 +39,15 @@ type PortSummary struct {
 }
 
 type PortProbeResult struct {
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	Protocol  string `json:"protocol"`
-	Reachable bool   `json:"reachable"`
-	LatencyMs int64  `json:"latencyMs"`
-	Message   string `json:"message"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	Protocol   string `json:"protocol"`
+	ProbeType  string `json:"probeType,omitempty"`
+	Reachable  bool   `json:"reachable"`
+	LatencyMs  int64  `json:"latencyMs"`
+	Message    string `json:"message"`
+	HTTPStatus int    `json:"httpStatus,omitempty"`
+	CertInfo   string `json:"certInfo,omitempty"`
 }
 
 type PortMonitorRequest struct {
