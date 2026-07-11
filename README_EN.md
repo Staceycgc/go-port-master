@@ -36,7 +36,7 @@ This project references [MMCISAGOODMAN/port-master](https://github.com/MMCISAGOO
 
 | Layer | Technology |
 | --- | --- |
-| Backend | Go 1.22, chi, gopsutil, golang.org/x/crypto/ssh, gorilla/websocket, embed |
+| Backend | Go 1.20+, chi, gopsutil, golang.org/x/crypto/ssh, gorilla/websocket, embed |
 | Frontend | Vue 3, Vite, Element Plus, vue-i18n, Axios |
 | Storage | No database; settings in browser LocalStorage |
 | Distribution | Single Go binary embedding `backend/internal/web/dist` |

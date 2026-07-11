@@ -6,7 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log/slog"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -79,7 +79,7 @@ func main() {
 	printStartup(*host, *port, authEnabled, generatedToken, authToken, appCfg)
 	defer appServer.Close()
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		slog.Error("server stopped", "error", err)
+		log.Printf("server stopped: %v", err)
 		os.Exit(1)
 	}
 }
