@@ -33,45 +33,7 @@ jobs:
         run: npm ci && npm run build
 
       - name: Build release binaries
-        working-directory: backend
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y zip
-          version="${GITHUB_REF_NAME#v}"
-          mkdir -p ../dist/release
-
-          build_one() {
-            local goos="$1"
-            local goarch="$2"
-            local ext="$3"
-            local base="port-master-${version}-${goos}-${goarch}"
-            local out="../dist/release/${base}${ext}"
-
-            GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
-              go build -ldflags="-s -w" -o "$out" ./cmd/port-master
-
-            if [ "$goos" = "windows" ]; then
-              mkdir -p "../dist/release/${base}"
-              cp "$out" "../dist/release/${base}/port-master${ext}"
-              cp ../README.md "../dist/release/${base}/"
-              (cd "../dist/release/${base}" && zip -r "../${base}.zip" .)
-              rm -rf "../dist/release/${base}" "$out"
-            else
-              mkdir -p "../dist/release/${base}"
-              cp "$out" "../dist/release/${base}/port-master"
-              cp ../README.md "../dist/release/${base}/"
-              tar -czf "../dist/release/${base}.tar.gz" -C "../dist/release/${base}" .
-              rm -rf "../dist/release/${base}" "$out"
-            fi
-          }
-
-          build_one windows amd64 .exe
-          build_one windows arm64 .exe
-          build_one linux amd64 ""
-          build_one linux arm64 ""
-          build_one darwin amd64 ""
-          build_one darwin arm64 ""
+        run: bash scripts/build-release.sh
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
